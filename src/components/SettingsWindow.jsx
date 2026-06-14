@@ -1363,6 +1363,18 @@ export default class SettingsWindow extends PureComponent {
                                     <SettingsOption title={T.t("SETTINGS_MONITORS_SDR_SLIDER_TITLE")} description={T.t("SETTINGS_MONITORS_SDR_SLIDER_DESCRIPTION")} expandable={true}>
                                         {this.getSDRMonitorsSettings()}
                                     </SettingsOption>
+                                    <SettingsOption title={T.t("SETTINGS_MONITORS_SYNC_INTERNAL_TITLE")} description={T.t("SETTINGS_MONITORS_SYNC_INTERNAL_DESC")} input={this.renderToggle("syncInternalBrightness")}>
+                                        {this.state.rawSettings.syncInternalBrightness ? (
+                                            <SettingsChild title={T.t("SETTINGS_MONITORS_SYNC_INTERNAL_MODE_TITLE")} input={
+                                                <select value={this.state.rawSettings.syncInternalBrightnessMode || "absolute"} onChange={e => {
+                                                    this.setSetting("syncInternalBrightnessMode", e.target.value)
+                                                }}>
+                                                    <option value="absolute">{T.t("SETTINGS_MONITORS_SYNC_INTERNAL_MODE_ABSOLUTE")}</option>
+                                                    <option value="relative">{T.t("SETTINGS_MONITORS_SYNC_INTERNAL_MODE_RELATIVE")}</option>
+                                                </select>
+                                            } />
+                                        ) : null}
+                                    </SettingsOption>
                                 </div>
 
                                 <div className="pageSection">

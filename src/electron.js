@@ -503,6 +503,8 @@ const defaultSettings = {
   windowsStyle: "system",
   hideClosedLid: false,
   getDDCBrightnessUpdates: false,
+  syncInternalBrightness: false,
+  syncInternalBrightnessMode: "absolute",
   detectIdleTimeEnabled: false,
   detectIdleTimeSeconds: 0,
   detectIdleTimeMinutes: 5,
@@ -1916,6 +1918,11 @@ async function refreshMonitors(fullRefresh = false, bypassRateLimit = false) {
 
     monitors = newMonitors;
 
+    const wmiMonitor = Object.values(newMonitors).find(m => m.type === "wmi")
+    if (wmiMonitor) {
+      lastInternalBrightness = wmiMonitor.brightness
+    }
+
     // Only send update if something changed
     if (JSON.stringify(newMonitors) !== JSON.stringify(oldMonitors)) {
       setTrayPercent()
@@ -1994,6 +2001,7 @@ function updateBrightnessThrottle(id, level, useCap = true, sendUpdate = true, v
 
 let ignoreBrightnessEvent = false
 let ignoreBrightnessEventTimeout = false
+let lastInternalBrightness = null
 function updateBrightness(index, newLevel, useCap = true, vcpValue = "brightness", clearTransition = true) {
   if(isWindowsUserIdle) return false; // Skip if displays are off
   try {
@@ -2185,6 +2193,53 @@ function updateAllBrightness(brightness, mode = "offset") {
   for (let key in monitors) {
     updateBrightnessThrottle(monitors[key].id, monitors[key].brightness, true, false)
   }
+}
+
+
+function syncDisplaysFromInternalBrightness(internalLevel, previousInternalLevel) {
+  if (!settings.syncInternalBrightness || !settings.useGuidBrightnessEvent) return false
+  if (ignoreBrightnessEvent || isWindowsUserIdle) return false
+
+  const mode = settings.syncInternalBrightnessMode || "absolute"
+  let didSync = false
+
+  if (mode === "relative") {
+    if (previousInternalLevel === null || previousInternalLevel === undefined) return false
+    const delta = internalLevel - previousInternalLevel
+    if (delta === 0) return false
+
+    for (let key in monitors) {
+      const monitor = monitors[key]
+      if (monitor.type === "none" || monitor.type === "wmi") continue
+
+      const newLevel = minMax(monitor.brightness + delta)
+      monitor.brightness = newLevel
+      if (settings.sdrAsMainSliderDisplays?.[monitor.key] && monitor.hdr === "active") {
+        monitor.sdrLevel = newLevel
+      }
+      updateBrightnessThrottle(monitor.id, newLevel, true, false)
+      didSync = true
+    }
+  } else {
+    for (let key in monitors) {
+      const monitor = monitors[key]
+      if (monitor.type === "none") continue
+
+      monitor.brightness = internalLevel
+      if (settings.sdrAsMainSliderDisplays?.[monitor.key] && monitor.hdr === "active") {
+        monitor.sdrLevel = internalLevel
+      }
+      if (monitor.type !== "wmi") {
+        updateBrightnessThrottle(monitor.id, internalLevel, true, false)
+        didSync = true
+      }
+    }
+  }
+
+  if (didSync) {
+    setTrayPercent()
+  }
+  return didSync
 }
 
 
@@ -2681,13 +2736,23 @@ function createPanel(toggleOnLoad = false, isRefreshing = false, showOnLoad = tr
       // Internal display brightness change
       if(!settings.useGuidBrightnessEvent) return false;
       if(!ignoreBrightnessEvent) {
+        let wmiMonitor = null
         for(const hwid2 in monitors) {
           const monitor = monitors[hwid2]
           if(monitor.type === "wmi") {
-            const normalized = normalizeBrightness(setting.data, true, monitor.min, monitor.max, monitor.calibration)
-            monitor.brightness = normalized
-            monitor.brightnessRaw = setting.data
+            wmiMonitor = monitor
+            break
           }
+        }
+        if (wmiMonitor) {
+          const previousLevel = lastInternalBrightness
+          const normalized = normalizeBrightness(setting.data, true, wmiMonitor.min, wmiMonitor.max, wmiMonitor.calibration)
+          wmiMonitor.brightness = normalized
+          wmiMonitor.brightnessRaw = setting.data
+          lastInternalBrightness = normalized
+
+          syncDisplaysFromInternalBrightness(normalized, previousLevel)
+          setTrayPercent()
           sendToAllWindows('monitors-updated', monitors)
         }
       }
